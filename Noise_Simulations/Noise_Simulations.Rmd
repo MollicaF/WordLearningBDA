@@ -1,0 +1,133 @@
+---
+title: 'How data drives early word learning: Simulations'
+author: "F.Mollica S.T.Piantadosi"
+date: "12/09/2016"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=F}
+suppressMessages(library(ggplot2))
+suppressMessages(library(plyr))
+```
+
+# Internal Noise
+
+```{r}
+data = read.csv('Recovered_Parameters/Internal/InternalNoise_Summary.csv')
+converge = read.csv('Recovered_Parameters/Internal/InternalNoise_Convergence.csv')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged=='Yes',])[1] / dim(converge)[1]))
+
+data$PercentVar = mapvalues(data$PercentVar, 
+                            from = c('Var_001', 'Var_01', 'Var_05',
+                                     'Var_10', 'Var_25'),
+                            to = c('0.1%', '1%', '5%',
+                                     '10%', '25%'))
+
+data = subset(data, PercentVar %in% c('0.1%', '1%', '5%'))
+
+```
+
+## Recovered Number of ELIs: k
+
+```{r}
+ggplot(data, aes(PercentVar, k_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=10), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab('Recovered k') +
+  scale_y_continuous(breaks=seq(0, 12, 2)) +
+  theme_bw()
+```
+
+## Recovered Rate of ELIs: $\lambda$
+
+```{r}
+ggplot(data, aes(PercentVar, lambda_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=0.5), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab(expression(paste('Recovered ',lambda))) +
+  scale_y_continuous(breaks=seq(0, 0.6, 0.1)) +
+  theme_bw()
+```
+
+## Recovered Start Time: s
+
+```{r}
+ggplot(data, aes(PercentVar, start_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=4), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab('Recovered start time') +
+  scale_y_continuous(breaks=seq(0, 14, 2)) +
+  theme_bw()
+```
+
+# External Noise
+
+```{r}
+data = read.csv('Recovered_Parameters/External/ExternalNoise_Summary.csv')
+converge = read.csv('Recovered_Parameters/External/ExternalNoise_Convergence.csv')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged=='Yes',])[1] / dim(converge)[1]))
+
+data$PercentVar = mapvalues(data$PercentVar, 
+                            from = c('Var_001', 'Var_01', 'Var_05',
+                                     'Var_10', 'Var_25'),
+                            to = c('0.1%', '1%', '5%',
+                                     '10%', '25%'))
+
+```
+
+## Recovered Number of ELIs: k
+
+```{r}
+ggplot(data, aes(PercentVar, k_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=10), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab('Recovered k') +
+  scale_y_continuous(breaks=seq(0, 12, 2)) +
+  theme_bw()
+```
+
+## Recovered Rate of ELIs: $\lambda$
+
+```{r}
+ggplot(data, aes(PercentVar, lambda_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=0.5), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab(expression(paste('Recovered ',lambda))) +
+  scale_y_continuous(breaks=seq(0, 0.6, 0.1)) +
+  theme_bw()
+```
+
+## Recovered Start Time: s
+
+```{r}
+ggplot(data, aes(PercentVar, start_Mean, fill=PercentVar)) +
+  stat_summary(fun.y=mean, geom='bar') +
+  stat_summary(fun.data=mean_cl_boot, geom='linerange') +
+  geom_hline(aes(yintercept=4), linetype=2) +
+  xlab('Percent Variance Added') +
+  guides(fill=F) +
+  ylab('Recovered start time') +
+  scale_y_continuous(breaks=seq(0, 14, 2)) +
+  theme_bw()
+```

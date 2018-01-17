@@ -1,0 +1,11 @@
+model {
+    k ~ dunif(0, 10000)
+    lambda ~ dunif(0, 10000)
+    delta ~ dgamma(1.5, 1)
+    start ~ dunif(0, 100)
+    for ( a in 1:Nbin ) {
+        x[a] <- pow((max(age[a]-start,0)/lambda), delta)
+        theta[a] <- pgamma(x[a], k, 1)
+        yes[a] ~ dbinom(theta[a], N[a])
+    }
+}

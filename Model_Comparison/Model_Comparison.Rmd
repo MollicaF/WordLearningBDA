@@ -1,0 +1,139 @@
+---
+title: 'How data drives early word learning: Model Comparison'
+author: "F.Mollica S.T.Piantadosi"
+date: "December 9, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = F)
+suppressMessages(library(ggplot2))
+suppressMessages(library(plyr))
+suppressMessages(library(reshape))
+suppressMessages(library(gdata))
+```
+
+## Weibull Gamma
+
+```{r WG}
+# Load Weibull Gamma
+data  = read.csv('BDA_WG/Summary.csv')
+converge = read.csv('BDA_WG/Convergence.csv')
+converge = subset(converge, language=='English')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_delta < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged == 'Yes',])[1]/dim(converge)[1]))
+eng = merge(converge, data)
+mcdi  = subset(read.csv('../Production/production-mcdi.csv'), language=='English')
+engWG = eng[eng$converged=='Yes',c('item','item.id','k_Mean','lambda_Mean','delta_Mean')]
+
+pred = merge(mcdi, engWG)
+pred$BDA_WG = with(pred,pgamma((age/lambda_Mean)**delta_Mean, k_Mean, 1))
+
+pred = pred[,c('item.id', 'item', 'language', 'age', 'produces', 'n', 'category', 'BDA_WG')]
+
+```
+
+## Hidaka (2013)'s Weibull Gamma
+
+```{r hidaka}
+# Load Hidaka's fits
+hidaka = read.csv('hidaka.csv')
+hidaka = hidaka[,c('item','WG_log_delta','WG_log_beta','WG_log_k')]
+hidaka$k = exp(hidaka$WG_log_k)
+hidaka$lambda = exp(hidaka$WG_log_delta)
+hidaka$delta = exp(hidaka$WG_log_beta)
+
+hidaka = merge(mcdi, hidaka)
+hidaka$Hidaka_WG = with(hidaka,pgamma((age/lambda)**delta, k, 1))
+hidaka = hidaka[,c('item','item.id','age','produces','n','category','Hidaka_WG')]
+
+h = ddply(hidaka, .(item), summarise, Var=var(Hidaka_WG))
+hidaka = merge(hidaka, h)
+hidaka = hidaka[hidaka$Var!=0,]
+hidaka$Var = NULL
+
+```
+
+## Weibull Gamma with start time parameter
+
+```{r, WGs}
+data  = read.csv('BDA_WGs/Summary.csv')
+converge = read.csv('BDA_WGs/Convergence.csv')
+converge = subset(converge, language=='English')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_delta < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged == 'Yes',])[1]/dim(converge)[1]))
+eng = merge(converge, data)
+engWGs = eng[eng$converged=='Yes',c('item','item.id','k_Mean','lambda_Mean','delta_Mean','start_Mean')]
+
+pre = merge(mcdi, engWGs)
+pre$BDA_WGs = with(pre,pgamma(((age-start_Mean)/lambda_Mean)**delta_Mean, k_Mean, 1))
+
+bdaWgs = pre[,c('item.id', 'item', 'language', 'age', 'produces', 'n', 'category', 'BDA_WGs')]
+
+```
+
+## Gamma Model with start time parameter
+
+```{r BDA_Gs}
+data  = read.csv('../Production/All_Data_Production_Summary.csv')
+converge = read.csv('../Production/All_Data_Production_Convergence.csv')
+converge = subset(converge, language=='English')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged == 'Yes',])[1]/dim(converge)[1]))
+eng   = subset(data, language=='English')
+engWGs = eng[,c('item','item.id','k_Mean','lambda_Mean','start_Mean')]
+
+gam = merge(mcdi, engWGs)
+gam$BDA_Gs = with(gam,pgamma(((age-start_Mean)*lambda_Mean), k_Mean, 1))
+
+gam = gam[,c('item.id', 'item', 'language', 'age', 'produces', 'n', 'category', 'BDA_Gs')]
+
+```
+
+## Model Comparison
+
+```{r, modelcomp}
+pred$variable = colnames(pred)[dim(pred)[2]]
+colnames(pred)[dim(pred)[2]-1] = 'value'
+
+hidaka$variable = colnames(hidaka)[dim(hidaka)[2]]
+colnames(hidaka)[dim(hidaka)[2]-1] = 'value'
+hidaka$language = 'English'
+hidaka = hidaka[,colnames(pred)]
+
+bdaWgs$variable = colnames(bdaWgs)[dim(bdaWgs)[2]]
+colnames(bdaWgs)[dim(bdaWgs)[2]-1] = 'value'
+
+gam$variable = colnames(gam)[dim(gam)[2]]
+colnames(gam)[dim(gam)[2]-1] = 'value'
+
+pred.m = rbind(rbind(rbind(pred, hidaka),bdaWgs),gam)
+
+mycor.test <- function(df) {
+  cr <- cor.test(df$value, df$produces) 
+  data.frame(estimate=cr$estimate, ymin=cr$conf.int[1], ymax=cr$conf.int[2])
+}
+
+m <- ddply( pred.m, c("variable"), mycor.test)
+m$Model <- m$variable
+
+m.w <- ddply( pred.m, c("item","variable"), mycor.test)
+m.w$Model <- m.w$variable
+m.w$Model = reorder.factor(m.w$Model, new.order=c('Hidaka_WG', 'BDA_WG', 'BDA_WGs', 'BDA_Gs'))
+
+ggplot(m.w, aes(y=estimate**2, x=Model, ymin=ymin**2, ymax=ymax**2)) + 
+  geom_jitter(alpha=0.1, aes(color=Model)) +
+  stat_summary(fun.data=mean_cl_boot, geom='errorbar') +
+  stat_summary(fun.y=mean, geom='point') +
+  ylim(0,1) + theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) + 
+  guides(color=F) +
+  xlab("") + ylab("Coef. of Determination")
+
+```

@@ -1,0 +1,322 @@
+---
+title: 'How data drives early word learning: Production'
+author: "F.Mollica S.T.Piantadosi"
+date: "12/09/2016"
+output: html_document
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(warning=FALSE)
+suppressMessages(library(ggplot2))
+suppressMessages(library(plyr))
+suppressMessages(library(reshape))
+```
+
+# Production All Data
+
+```{r}
+# Load in the data
+data = read.csv('All_Data_Production_Summary.csv')
+mcdi = read.csv('production-mcdi.csv')
+converge = read.csv('All_Data_Production_Convergence.csv')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged=='Yes',])[1] / dim(converge)[1]))
+
+d = merge(data, converge[c('language','item.id','converged')])
+d = subset(d, converged=='Yes')
+
+```
+
+
+## Check Model Fit
+
+```{r}
+pred = merge(mcdi, d[,c('language', 'item.id', 'k_Mean', 'lambda_Mean', 'start_Mean')])
+
+PRED = NULL
+for(q in split(pred, paste(pred$language, pred$item))) {
+    train <- q
+    test  <- q
+    train$successes = train$produces * train$n
+    train$failures = train$n - train$successes
+    
+    g.Probit <- glm( cbind(successes, failures) ~ age, family=binomial(link="probit"), data=train)
+    g.Logit  <- glm( cbind(successes, failures) ~ age, family=binomial(link="logit"),  data=train)
+            
+    PRED <- rbind(PRED, data.frame(language=q$language[1], item.id=q$item.id[1], item=q$item[1], category=q$category[1], 
+                                   k=q$k_Mean[1], l=q$lambda_Mean[1], s=q$start_Mean[1], obs=test$produces, n=q$n[1], age=test$age,
+                                    Gamma=pgamma(test$age-q$start_Mean[1], shape=q$k_Mean[1], rate=q$lambda_Mean[1]),
+                                    Probit=predict(g.Probit, newdata=test, type="response"),
+                                    Logit=predict(g.Logit, newdata=test, type="response")
+                                    ))
+}
+
+pred.m <- melt(PRED, id.vars=c('language', 'item.id', 'age', 'obs', 'n', 'category', 'item', 'k', 'l', 's'))
+
+mycor.test <- function(df) {
+           cr <- cor.test(df$value, df$obs) 
+           data.frame(estimate=cr$estimate, ymin=cr$conf.int[1], ymax=cr$conf.int[2])
+ }
+
+m <- ddply( pred.m, c("language", "variable"), mycor.test)
+
+m$Model <- m$variable
+
+ggplot(m, aes(y=estimate, x=language, color=Model, ymin=ymin, ymax=ymax)) + 
+        geom_point() + geom_errorbar() + 
+        ylim(0,1) + theme_bw() +
+        theme(axis.text.x = element_text(angle = 90)) + 
+        xlab("") + ylab("Coef. of Determination")
+```
+
+## Check Parameter Values
+
+```{r}
+# Remove k_Mean > 3000, which are all syntactic structures not lexical items
+d = subset(d, k_Mean < 3000)
+mean = ddply(d, .(language), summarise, k_M=mean(k_Mean), k_low=mean(k_HDIlow), k_high=mean(k_HDIhigh), 
+                                        l_M=mean(lambda_Mean), l_low=mean(lambda_HDIlow), l_high=mean(lambda_HDIhigh), 
+                                        s_M=mean(start_Mean), s_low=mean(start_HDIlow), s_high=mean(start_HDIhigh))
+mean
+```
+
+### Number of ELIs: k
+
+```{r}
+ggplot(d, aes(x=language, y=k_Mean, fill=language)) + 
+    geom_boxplot() + 
+	ylab("Estimated k") + xlab("") + ylim(0, 65) +
+	guides(fill=F) + ggtitle('Production') +
+	theme_bw() +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+### Rate of ELIs: $\lambda$
+
+```{r}
+ggplot(d, aes(x=language, y=lambda_Mean, fill=language)) + 
+    geom_boxplot() + 
+	ylab(expression(paste("Estimated ", lambda))) + xlab("") +
+	guides(fill=F) + ggtitle('Production') + ylim(0, 3) +
+	theme_bw() +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+### Start Time: s
+
+```{r}
+ggplot(d, aes(x=language, y=start_Mean, fill=language)) + 
+    geom_boxplot() + 
+	ylab("Estimated start (months)") + xlab("") +
+	guides(fill=F) + ggtitle('Production') +
+	theme_bw() + ylim(0,20) +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+## Parameter Values by MCDI Category for English
+
+```{r}
+eng = subset(d, language=='English')
+```
+
+### Number of ELIs: k
+
+```{r}
+ggplot(eng, aes(x=category, y=k_Mean, fill=category)) + 
+    geom_boxplot() + 
+	ylab("Estimated mean k") + xlab("") +
+	guides(fill=F) + ggtitle('Production') +
+	theme_bw() +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+### Rate of ELIs: $\lambda$
+
+```{r}
+ggplot(eng, aes(x=category, y=lambda_Mean, fill=category)) + 
+    geom_boxplot() + 
+	ylab(expression(paste("Estimated mean ",lambda))) + xlab("") +
+	guides(fill=F) + ggtitle('Production') +
+	theme_bw() +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+### Start Time: s
+
+```{r}
+ggplot(eng, aes(x=category, y=start_Mean, fill=category)) + 
+    geom_boxplot() + 
+	ylab("Estimated mean start time (months)") + xlab("") +
+	guides(fill=F) + ggtitle('Production') +
+	theme_bw() +
+	theme(axis.text.x=element_text(angle=90))
+```
+
+## Correlating Parameter Values with Childes Frequency
+
+```{r}
+childes <- read.table("childes.txt", header=F)
+names(childes) <- c("item", "freq")
+freq <- merge(eng, childes)
+```
+
+### Number of ELIs: k
+
+```{r}
+r = with(freq, cor.test(log(freq), k_Mean))
+message(paste('Correlation with Log Frequency: ', r$estimate, ', p=', r$p.value, sep=''))
+
+ggplot(freq, aes(x=log(freq), y=k_Mean)) + 
+    geom_point(alpha=0.5) + 
+    stat_smooth(method='lm',formula=y~x) + 
+    xlab("Log Frequency") + 
+    ylab(expression(paste("Estimated ", k))) + 
+    theme_bw()
+```
+
+### Rate of ELIs: $\lambda$
+
+```{r}
+r = with(freq, cor.test(log(freq), lambda_Mean))
+message(paste('Correlation with Log Frequency: ', r$estimate, ', p=', r$p.value, sep=''))
+
+ggplot(freq, aes(x=log(freq), y=lambda_Mean)) + 
+    geom_point(alpha=0.5) + 
+    stat_smooth(method='lm',formula=y~x) + 
+    xlab("Log Frequency") + 
+    ylab(expression(paste("Estimated ", lambda))) + 
+    theme_bw()
+```
+
+### Start Time: s
+
+```{r}
+r = with(freq, cor.test(log(freq), start_Mean))
+message(paste('Correlation with Log Frequency: ', r$estimate, ', p=', r$p.value, sep=''))
+
+ggplot(freq, aes(x=log(freq), y=start_Mean)) + 
+    geom_point(alpha=0.5) + 
+    stat_smooth(method='lm',formula=y~x) + 
+    xlab("Log Frequency") + 
+    ylab(expression(paste("Estimated ", 'start time (months)'))) + 
+    theme_bw()
+```
+
+## Comparison of Variance Explained by Waiting for Data vs. Start Time
+
+```{r}
+bootByHand = function(df, iters) {
+    RESULTS = NULL
+    for (i in 1:iters) {
+        N = length(df$language)
+        inx = sample(1:N, N, replace=T)
+        set = df[inx,]
+        
+        R.t = var(set$k_Mean / set$lambda_Mean)
+        R.a = var(set$start_Mean) + var(set$k_Mean / set$lambda_Mean)
+        PropVar = R.t / R.a
+
+        set$t = set$k_Mean / set$lambda_Mean
+        set$a = set$start_Mean + set$t
+        PropTime = set$t / set$a
+        
+        result = data.frame(PropVar = PropVar, PropTime = PropTime)
+        RESULTS = rbind(RESULTS, result)
+    }
+    return(RESULTS)
+}
+
+propBootP = ddply(d, .(language), bootByHand, 1000)
+prP = ddply(propBootP, .(language), summarise, lowVar = quantile(PropVar, probs=0.05), lowT = quantile(PropTime, probs=0.05), 
+            highVar = quantile(PropVar, probs=0.95), highT = quantile(PropTime, probs=0.95))
+
+get_prop = function(d) {
+    R.s.comp = var(d$start_Mean)
+    R.t.comp = var(d$k_Mean / d$lambda_Mean)
+    R.a.comp = var(d$start_Mean) + var(d$k_Mean / d$lambda_Mean)
+    Vars=R.t.comp/R.a.comp
+    
+    set = d
+    set$t = set$k_Mean / set$lambda_Mean
+    set$a = set$start_Mean + set$t
+    propTime = mean(set$t / set$a)
+    
+    return(data.frame(PropV=Vars, PropT=propTime))
+}
+
+proP = ddply(d, .(language), get_prop)
+propP = merge(prP, proP)
+
+ggplot(propP, aes(x=language, y=PropV, fill=language)) +
+    geom_bar(stat='identity', position=position_dodge(0.9)) +
+    geom_errorbar(aes(ymin=lowVar,ymax=highVar), position=position_dodge(0.9), width=0.3) +
+    geom_point(aes(x=language, y=PropT), shape=2) +
+    geom_pointrange(aes(ymin=lowT, ymax=highT)) +
+    ylab('Percent') +
+    xlab('') +
+    guides(fill=F) +
+    ggtitle('Production') +
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=90))
+```
+
+# Production First Half Data
+
+```{r}
+# Load in the data
+data = read.csv('First_Half_Production_Summary.csv')
+converge = read.csv('First_Half_Production_Convergence.csv')
+converge$converged = "No"
+converge$converged[converge$Rhat_k < 1.2 & converge$Rhat_l < 1.2 & converge$Rhat_s < 1.2] = 'Yes'
+
+message(paste('Percent Chains Converged:', 100*dim(converge[converge$converged=='Yes',])[1] / dim(converge)[1]))
+
+d = merge(data, converge[c('language','item.id','converged')])
+d = subset(d, converged=='Yes')
+
+```
+
+## Check Predictive Ability
+
+```{r}
+pred = merge(mcdi, d[,c('language', 'item.id', 'k_Mean', 'lambda_Mean', 'start_Mean')])
+
+PRED = NULL
+for(q in split(pred, paste(pred$language, pred$item))) {
+    train <- subset(q, age<median(age))
+    test  <- subset(q, age>=median(age))
+    train$successes = train$produces * train$n
+    train$failures = train$n - train$successes
+    
+    g.Probit <- glm( cbind(successes, failures) ~ age, family=binomial(link="probit"), data=train)
+    g.Logit  <- glm( cbind(successes, failures) ~ age, family=binomial(link="logit"),  data=train)
+            
+    PRED <- rbind(PRED, data.frame(language=q$language[1], item.id=q$item.id[1], item=q$item[1], category=q$category[1], 
+                                   k=q$k_Mean[1], l=q$lambda_Mean[1], s=q$start_Mean[1], obs=test$produces, n=q$n[1], age=test$age,
+                                    Gamma=pgamma(test$age-q$start_Mean[1], shape=q$k_Mean[1], rate=q$lambda_Mean[1]),
+                                    Probit=predict(g.Probit, newdata=test, type="response"),
+                                    Logit=predict(g.Logit, newdata=test, type="response")
+                                    ))
+}
+
+pred.m <- melt(PRED, id.vars=c('language', 'item.id', 'age', 'obs', 'n', 'category', 'item', 'k', 'l', 's'))
+
+mycor.test <- function(df) {
+           cr <- cor.test(df$value, df$obs) 
+           data.frame(estimate=cr$estimate, ymin=cr$conf.int[1], ymax=cr$conf.int[2])
+ }
+
+m <- ddply( pred.m, c("language", "variable"), mycor.test)
+
+m$Model <- m$variable
+
+ggplot(m, aes(y=estimate, x=language, color=Model, ymin=ymin, ymax=ymax)) + 
+        geom_point(position=position_dodge(.2)) + 
+        geom_errorbar(position=position_dodge(.2),width=2) + 
+        ylim(0,1) + theme_bw() +
+        theme(axis.text.x = element_text(angle = 90)) + 
+        xlab("") + ylab("Coef. of Determination") +
+        ggtitle('Production')
+```
